@@ -124,12 +124,16 @@ def weighted_choice(valid):
         yellow_count = tile.count('y')
 
      
-        if water_count >= 3:
-            weights.append(8)  
+        if water_count == 4:
+            weights.append(30)
+        elif green_count == 4:
+            weights.append(30)
+        elif water_count >= 3:
+            weights.append(15)
         elif green_count >= 3:
-            weights.append(10)
+            weights.append(15)
         elif yellow_count >= 3:
-            weights.append(4)  
+            weights.append(5)
         else:
             # Transitional tiles
             weights.append(15)
@@ -331,7 +335,7 @@ def chunkNormalAbove(current_board, collapsed, backing, image_Size, above_List, 
         if ["X","X","X","X"] in current_board:
             restart = True
             trials += 1
-        if trials > 15: return [] # Safety break
+        if trials > 100: return [] # Safety break
 
     return removeRowCollumn(current_board)
    
@@ -377,7 +381,7 @@ def chunkNormalLeft(current_board, collapsed, backing, image_Size, above_List, l
             restart = True
             trials += 1
         # INCREASED TRIAL LIMIT TO 50
-        if trials > 50:
+        if trials > 100:
             print("Critical Failure: Could not resolve constraints.")
             return [["bl","bl","bl","bl"]] * (image_Size**2) # Return black tiles instead of empty
            
@@ -410,7 +414,7 @@ def removeRowCollumn(theBoard):
     return lister
    
 #Prints out the board with colors!!!
-def printer(final_board, image_Size):
+def printer(final_board, width, height):
     colors = {
     'g': Fore.GREEN,
     'y': Fore.YELLOW,
@@ -424,8 +428,8 @@ def printer(final_board, image_Size):
 
     BLOCK = "\u2588\u2588"
 
-    for i in range(image_Size):
-        row = final_board[i*image_Size : (i+1)*image_Size]
+    for i in range(height):
+        row = final_board[i*width : (i+1)*width]
 
         for tile in row:
             if tile == ["X","X","X","X"]:
@@ -519,7 +523,7 @@ def chunks(board, collapsed, backing, image_Size, tiles):
 #User Input/Main Interface
 
 
-size = 4
+size = 5
 grid = []
 
 #User inputed values
@@ -530,10 +534,11 @@ grid = []
  #   print()
 
 grid = [
-["g","g","g","g"],
-["g","g","y","y"],
-["y","y","b","b"],
-["b","b","b","b"],
+["g","g","g","g","g"],
+["g","g","g","y","y"],
+["g","g","y","b","b"],
+["y","y","b","b","b"],
+["b","b","b","b","y"],
 ]
 
 #List declarations
@@ -583,6 +588,7 @@ max_y = 0
 #Creates the list of chunks based on current exploration (S/D moves)
 def build_full_map():
     boards = []
+   
 
     for y in range(min_y, max_y + 1):
         for x in range(min_x, max_x + 1):
@@ -590,6 +596,7 @@ def build_full_map():
 
     width_chunks = max_x - min_x + 1
     height_chunks = max_y - min_y + 1
+   
 
     return dissolver(
         boards,
@@ -602,7 +609,7 @@ def build_full_map():
 def add_right():
     global max_x
     new_x = max_x + 1
-
+    # Generate chunks for the entire height of the current world
     for y in range(min_y, max_y + 1):
         left_chunk = world[(new_x - 1, y)]
         left_constraints = getRightColumn(left_chunk, CHUNK)
@@ -610,66 +617,36 @@ def add_right():
         if y > min_y:
             above_chunk = world[(new_x, y - 1)]
             above_constraints = getAboveRow(above_chunk, CHUNK)
-           
-            res = chunkNormalCorner(
-                [], [], [],
-                CHUNK,
-                above_constraints,
-                left_constraints,
-                above_chunk,
-                left_chunk,
-                tiles
-            )
-            # Safety: If generation fails, fill with a basic tile instead of crashing
-            world[(new_x, y)] = res.copy() if res else [tiles[0]] * (CHUNK**2)
+            res = chunkNormalCorner([], [], [], CHUNK, above_constraints, left_constraints, above_chunk, left_chunk, tiles)
         else:
-            res = chunkNormalLeft(
-                [], [], [],
-                CHUNK,
-                ["none"],
-                left_constraints,
-                [],
-                left_chunk,
-                tiles
-            )
-            world[(new_x, y)] = res.copy() if res else [tiles[0]] * (CHUNK**2)
-
+            # First chunk in the new column (no above neighbor)
+            res = chunkNormalLeft([], [], [], CHUNK, ["none"], left_constraints, [], left_chunk, tiles)
+       
+        # Ensure res is not empty before copying
+        if not res or len(res) == 0:
+            res = [random.choice(tiles)] * (CHUNK**2)
+        world[(new_x, y)] = res.copy()
     max_x += 1
 
 def add_down():
     global max_y
     new_y = max_y + 1
-
+    # Generate chunks for the entire width of the current world
     for x in range(min_x, max_x + 1):
         above_chunk = world[(x, new_y - 1)]
         above_constraints = getAboveRow(above_chunk, CHUNK)
 
         if x > min_x:
-            # CORNER CASE: Needs both top and left
             left_chunk = world[(x - 1, new_y)]
             left_constraints = getRightColumn(left_chunk, CHUNK)
-
-            world[(x, new_y)] = chunkNormalCorner(
-                [], [], [],
-                CHUNK,
-                above_constraints,
-                left_constraints,
-                above_chunk,
-                left_chunk,
-                tiles
-            ).copy()
+            res = chunkNormalCorner([], [], [], CHUNK, above_constraints, left_constraints, above_chunk, left_chunk, tiles)
         else:
-            # Just top constraint
-            world[(x, new_y)] = chunkNormalAbove(
-                [], [], [],
-                CHUNK,
-                above_constraints,
-                ["none"],
-                above_chunk,
-                [],
-                tiles
-            ).copy()
+            # First chunk in the new row (no left neighbor)
+            res = chunkNormalAbove([], [], [], CHUNK, above_constraints, ["none"], above_chunk, [], tiles)
 
+        if not res or len(res) == 0:
+            res = [random.choice(tiles)] * (CHUNK**2)
+        world[(x, new_y)] = res.copy()
     max_y += 1
 
 
@@ -679,8 +656,9 @@ while True:
     final_map = build_full_map()
 
     width = (max_x - min_x + 1) * CHUNK
+    height =(max_y - min_y + 1) * CHUNK
 
-    printer(final_map, width)
+    printer(final_map, width, height)
     print("S = Add Bottom Row")
     print("D = Add Right Column")
     print("Q = Quit")
